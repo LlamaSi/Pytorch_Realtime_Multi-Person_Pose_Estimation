@@ -176,4 +176,4 @@ def PoseModel(num_point, num_vector, num_stages=6, batch_norm=False, pretrained=
 
 if __name__ == '__main__':
 
-    print PoseModel(19, 6, True, True)
+    print (PoseModel(19, 6, True, True))

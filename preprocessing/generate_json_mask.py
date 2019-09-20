@@ -35,7 +35,8 @@ def parse():
                         dest='filelist_path', help='the save_path for the generated filelist')
     parser.add_argument('--masklist_path', type=str,
                         dest='masklist_path', help='the save_path for the generated masklist')
-
+    parser.add_argument('--img_dir', type=str,
+                            dest='img_dir')
     return parser.parse_args()
 
 def processing(args):
@@ -48,7 +49,7 @@ def processing(args):
     ids = list(coco.imgs.keys())
     lists = []
     
-    flielist_fp = open(args.filelist_path, 'w')
+    filelist_fp = open(args.filelist_path, 'w')
     masklist_fp = open(args.masklist_path, 'w')
     
     for i, img_id in enumerate(ids):
@@ -101,7 +102,7 @@ def processing(args):
             person_centers.append(np.append(person_center, max(img_anns[p]['bbox'][2], img_anns[p]['bbox'][3])))
     
         if len(persons) > 0:
-            filelist_fp.write(name + '\n')
+            filelist_fp.write(os.path.join(args.img_dir, name) + '\n')
             info = dict()
             info['filename'] = name
             info['info'] = []
@@ -154,17 +155,17 @@ def processing(args):
             np.save(os.path.join(mask_dir, name.split('.')[0] + '.npy'), mask_miss)
             masklist_fp.write(os.path.join(mask_dir, name.split('.')[0] + '.npy') + '\n')
         if i % 1000 == 0:
-            print "Processed {} of {}".format(i, len(ids))
+            print ("Processed {} of {}".format(i, len(ids)))
     
     masklist_fp.close()
     filelist_fp.close()
-    print 'write json file'
+    print ('write json file')
     
     fp = open(json_path, 'w')
     fp.write(json.dumps(lists))
     fp.close()
     
-    print 'done!'
+    print ('done!')
 
 if __name__ == '__main__':
 
