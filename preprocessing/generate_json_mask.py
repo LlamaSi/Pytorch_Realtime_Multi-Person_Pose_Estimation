@@ -5,6 +5,7 @@ import json
 import numpy as np
 from pycocotools.coco import COCO
 import argparse
+import pdb
 
 COCO_TO_OURS = [0, 15, 14, 17, 16, 5, 2, 6, 3, 7, 4, 11, 8, 12, 9, 13, 10]
 
@@ -74,7 +75,7 @@ def processing(args):
             # person center
             person_center = [img_anns[p]['bbox'][0] + img_anns[p]['bbox'][2] / 2.0, img_anns[p]['bbox'][1] + img_anns[p]['bbox'][3] / 2.0]
             scale = img_anns[p]['bbox'][3] / 368.0
-    
+            pdb.set_trace()
             # skip this person if the distance to exiting person is too small
             flag = 0
             for pc in person_centers:

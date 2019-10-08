@@ -41,15 +41,15 @@ def parse():
 
 def construct_model(args):
 
-    model = pose_estimation.PoseModel(num_point=19, num_vector=19, pretrained=True)
+    model = pose_estimation.PoseModel(num_point=19, num_vector=19, pretrained=False)
     # state_dict = torch.load(args.pretrained)['state_dict']
     # from collections import OrderedDict
     # new_state_dict = OrderedDict()
     # for k, v in state_dict.items():
-        # name = k[7:]
-        # new_state_dict[name] = v
+    #     name = k[7:]
+    #     new_state_dict[name] = v
     # model.load_state_dict(new_state_dict)
-    # model.fc = nn.Linear(2048, 80)
+    model.fc = nn.Linear(2048, 80)
     model = torch.nn.DataParallel(model, device_ids=args.gpu).cuda()
 
     return model
@@ -79,6 +79,14 @@ def get_parameters(model, config, isdefault=True):
             {'params': lr_8, 'lr': config.base_lr * 8.}]
 
     return params, [1., 2., 4., 8.]
+
+def label2onhot(b_parsing_tensor):
+    size = b_parsing_tensor.size()
+    oneHot_size = (size[0], 20, size[2], size[3])
+    b_parsing_label = torch.cuda.FloatTensor(torch.Size(oneHot_size)).zero_()
+    b_parsing_label = b_parsing_label.scatter_(1, b_parsing_tensor.data.long().cuda(), 1.0)
+
+    return b_parsing_label
 
 def train_val(model, args):
 
@@ -129,22 +137,23 @@ def train_val(model, args):
 
     heat_weight = 46 * 46 * 19 / 2.0 # for convenient to compare with origin code
     vec_weight = 46 * 46 * 38 / 2.0
-
+    # pdb.set_trace()
     while iters < config.max_iter:
-        
+        # pdb.set_trace()
         for i, (input, heatmap, vecmap, mask) in enumerate(train_loader):
-            print(i)
+            # pdb.set_trace()
+            input = label2onhot(input)
             learning_rate = adjust_learning_rate(optimizer, iters, config.base_lr, policy=config.lr_policy, policy_parameter=config.policy_parameter, multiple=multiple)
             data_time.update(time.time() - end)
 
-            heatmap = heatmap.cuda(async=True)
-            vecmap = vecmap.cuda(async=True)
-            mask = mask.cuda(async=True)
+            heatmap = heatmap.cuda()
+            vecmap = vecmap.cuda()
+            mask = mask.cuda()
             input_var = torch.autograd.Variable(input)
             heatmap_var = torch.autograd.Variable(heatmap)
             vecmap_var = torch.autograd.Variable(vecmap)
             mask_var = torch.autograd.Variable(mask)
-
+            
             vec1, heat1, vec2, heat2, vec3, heat3, vec4, heat4, vec5, heat5, vec6, heat6 = model(input_var, mask_var)
             loss1_1 = criterion(vec1, vecmap_var) * vec_weight
             loss1_2 = criterion(heat1, heatmap_var) * heat_weight
@@ -161,9 +170,9 @@ def train_val(model, args):
             
             loss = loss1_1 + loss1_2 + loss2_1 + loss2_2 + loss3_1 + loss3_2 + loss4_1 + loss4_2 + loss5_1 + loss5_2 + loss6_1 + loss6_2
 
-            losses.update(loss.data[0], input.size(0))
+            losses.update(loss.item(), input.size(0))
             for cnt, l in enumerate([loss1_1, loss1_2, loss2_1, loss2_2, loss3_1, loss3_2, loss4_1, loss4_2, loss5_1, loss5_2, loss6_1, loss6_2]):
-                losses_list[cnt].update(l.data[0], input.size(0))
+                losses_list[cnt].update(l.item(), input.size(0))
 
             optimizer.zero_grad()
             loss.backward()
@@ -191,15 +200,22 @@ def train_val(model, args):
                 losses.reset()
                 for cnt in range(12):
                     losses_list[cnt].reset()
+
+                is_best = False
+                save_checkpoint({
+                    'iter': iters,
+                    'state_dict': model.state_dict(),
+                    }, is_best, 'openpose_coco')
+
     
             if config.test_interval != 0 and args.val_dir is not None and iters % config.test_interval == 0:
 
                 model.eval()
                 for j, (input, heatmap, vecmap, mask) in enumerate(val_loader):
 
-                    heatmap = heatmap.cuda(async=True)
-                    vecmap = vecmap.cuda(async=True)
-                    mask = mask.cuda(async=True)
+                    heatmap = heatmap.cuda()
+                    vecmap = vecmap.cuda()
+                    mask = mask.cuda()
                     input_var = torch.autograd.Variable(input, volatile=True)
                     heatmap_var = torch.autograd.Variable(heatmap, volatile=True)
                     vecmap_var = torch.autograd.Variable(vecmap, volatile=True)
@@ -221,9 +237,9 @@ def train_val(model, args):
                     
                     loss = loss1_1 + loss1_2 + loss2_1 + loss2_2 + loss3_1 + loss3_2 + loss4_1 + loss4_2 + loss5_1 + loss5_2 + loss6_1 + loss6_2
 
-                    losses.update(loss.data[0], input.size(0))
+                    losses.update(loss.item(), input.size(0))
                     for cnt, l in enumerate([loss1_1, loss1_2, loss2_1, loss2_2, loss3_1, loss3_2, loss4_1, loss4_2, loss5_1, loss5_2, loss6_1, loss6_2]):
-                        losses_list[cnt].update(l.data[0], input.size(0))
+                        losses_list[cnt].update(l.item(), input.size(0))
     
                 batch_time.update(time.time() - end)
                 end = time.time()

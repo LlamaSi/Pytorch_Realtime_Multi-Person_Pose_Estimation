@@ -63,7 +63,7 @@ def resize(img, mask, kpt, center, ratio):
     
     h, w, _ = img.shape
     if w < 64:
-        img = cv2.copyMakeBorder(img, 0, 0, 0, 64 - w, cv2.BORDER_CONSTANT, value=(128, 128, 128))
+        img = cv2.copyMakeBorder(img, 0, 0, 0, 64 - w, cv2.BORDER_CONSTANT, value=(0, 0, 0))
         mask = cv2.copyMakeBorder(mask, 0, 0, 0, 64 - w, cv2.BORDER_CONSTANT, value=(1, 1, 1))
         w = 64
     
@@ -199,7 +199,7 @@ def rotate(img, mask, kpt, center, degree):
     rotateMat[0, 2] += (new_width / 2.) - img_center[0]
     rotateMat[1, 2] += (new_height / 2.) - img_center[1]
 
-    img = cv2.warpAffine(img, rotateMat, (new_width, new_height), borderValue=(128, 128, 128))
+    img = cv2.warpAffine(img, rotateMat, (new_width, new_height), borderValue=(0, 0, 0))
     mask = cv2.warpAffine(mask, rotateMat, (new_width, new_height), borderValue=(1, 1, 1))
 
     num = len(kpt)
@@ -276,7 +276,7 @@ def crop(img, mask, kpt, center, offset_left, offset_up, w, h):
     mask = mask.reshape((height, width))
 
     new_img = np.empty((h, w, 3), dtype=np.float32)
-    new_img.fill(128)
+    new_img.fill(0)
 
     new_mask = np.empty((h, w), dtype=np.float32)
     new_mask.fill(1)

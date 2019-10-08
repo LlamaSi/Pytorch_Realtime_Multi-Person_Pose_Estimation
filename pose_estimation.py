@@ -4,6 +4,7 @@ import os
 import sys
 import math
 import torchvision.models as models
+import pdb
 
 class Pose_Estimation(nn.Module):
 
@@ -46,7 +47,7 @@ class Pose_Estimation(nn.Module):
         length = len(net_dict) - 1
         for i in range(length):
             one_layer = net_dict[i]
-            key = one_layer.keys()[0]
+            key = list(one_layer.keys())[0]
             v = one_layer[key]
 
             if 'pool' in key:
@@ -60,7 +61,7 @@ class Pose_Estimation(nn.Module):
 
         if last_activity:
             one_layer = net_dict[-1]
-            key = one_layer.keys()[0]
+            key = list(one_layer.keys())[0]
             v = one_layer[key]
 
             conv2d = nn.Conv2d(in_channels=v[0], out_channels=v[1], kernel_size=v[2], stride=v[3], padding=v[4])
@@ -70,7 +71,7 @@ class Pose_Estimation(nn.Module):
                 layers += [conv2d, nn.ReLU(inplace=True)]
         else:
             one_layer = net_dict[-1]
-            key = one_layer.keys()[0]
+            key = list(one_layer.keys())[0]
             v = one_layer[key]
 
             conv2d = nn.Conv2d(in_channels=v[0], out_channels=v[1], kernel_size=v[2], stride=v[3], padding=v[4])
@@ -120,7 +121,7 @@ class Pose_Estimation(nn.Module):
 def PoseModel(num_point, num_vector, num_stages=6, batch_norm=False, pretrained=False):
 
     net_dict = []
-    block0 = [{'conv1_1': [3, 64, 3, 1, 1]}, {'conv1_2': [64, 64, 3, 1, 1]}, {'pool1': [2, 2, 0]},
+    block0 = [{'conv1_1': [20, 64, 3, 1, 1]}, {'conv1_2': [64, 64, 3, 1, 1]}, {'pool1': [2, 2, 0]},
             {'conv2_1': [64, 128, 3, 1, 1]}, {'conv2_2': [128, 128, 3, 1, 1]}, {'pool2': [2, 2, 0]},
             {'conv3_1': [128, 256, 3, 1, 1]}, {'conv3_2': [256, 256, 3, 1, 1]}, {'conv3_3': [256, 256, 3, 1, 1]}, {'conv3_4': [256, 256, 3, 1, 1]}, {'pool3': [2, 2, 0]},
             {'conv4_1': [256, 512, 3, 1, 1]}, {'conv4_2': [512, 512, 3, 1, 1]}, {'conv4_3_cpm': [512, 256, 3, 1, 1]}, {'conv4_4_cpm': [256, 128, 3, 1, 1]}]
@@ -162,13 +163,13 @@ def PoseModel(num_point, num_vector, num_stages=6, batch_norm=False, pretrained=
             vgg19 = models.vgg19(pretrained=True)
             parameter_num *= 2
         vgg19_state_dict = vgg19.state_dict()
-        vgg19_keys = vgg19_state_dict.keys()
+        vgg19_keys = list(vgg19_state_dict.keys())
 
         model_dict = model.state_dict()
         from collections import OrderedDict
         weights_load = OrderedDict()
         for i in range(parameter_num):
-            weights_load[model.state_dict().keys()[i]] = vgg19_state_dict[vgg19_keys[i]]
+            weights_load[list(model.state_dict().keys())[i]] = vgg19_state_dict[vgg19_keys[i]]
         model_dict.update(weights_load)
         model.load_state_dict(model_dict)
 

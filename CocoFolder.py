@@ -117,6 +117,15 @@ def generate_vector(vector, cnt, kpts, vec_pair, stride, theta):
 
     return vector
 
+
+def label2onhot(b_parsing_tensor):
+    size = b_parsing_tensor.size()
+    oneHot_size = (size[0], 20, size[2], size[3])
+    b_parsing_label = torch.cuda.FloatTensor(torch.Size(oneHot_size)).zero_()
+    b_parsing_label = b_parsing_label.scatter_(1, b_parsing_tensor.data.long().cuda(), 1.0)
+
+    return b_parsing_label
+
 class CocoFolder(data.Dataset):
 
     def __init__(self, file_dir, stride, transformer=None):
@@ -139,29 +148,34 @@ class CocoFolder(data.Dataset):
         mask_path = self.mask_list[index]
         mask = np.load(mask_path)
         mask = np.array(mask, dtype=np.float32)
+        # mask is filled with 1 
+        # print("1",img.max(), img.min(),img.shape)
 
         kpt = self.kpt_list[index]
         center = self.center_list[index]
         scale = self.scale_list[index]
-
+        
         img, mask, kpt, center = self.transformer(img, mask, kpt, center, scale)
-
+        # print("2", img.min(), img.max(), img.shape)
         height, width, _ = img.shape
 
-        mask = cv2.resize(mask, (width / self.stride, height / self.stride)).reshape((height / self.stride, width / self.stride, 1))
+        mask = cv2.resize(mask, (width // self.stride, height // self.stride)).reshape((height // self.stride, width // self.stride, 1))
 
-        heatmap = np.zeros((height / self.stride, width / self.stride, len(kpt[0]) + 1), dtype=np.float32)
+        heatmap = np.zeros((height // self.stride, width // self.stride, len(kpt[0]) + 1), dtype=np.float32)
+        # zero plus gaussian
         heatmap = generate_heatmap(heatmap, kpt, self.stride, self.sigma)
         heatmap[:,:,0] = 1.0 - np.max(heatmap[:,:,1:], axis=2) # for background
         heatmap = heatmap * mask
 
-        vecmap = np.zeros((height / self.stride, width / self.stride, len(self.vec_pair[0]) * 2), dtype=np.float32)
-        cnt = np.zeros((height / self.stride, width / self.stride, len(self.vec_pair[0])), dtype=np.int32)
+        vecmap = np.zeros((height // self.stride, width // self.stride, len(self.vec_pair[0]) * 2), dtype=np.float32)
+        cnt = np.zeros((height // self.stride, width // self.stride, len(self.vec_pair[0])), dtype=np.int32)
 
         vecmap = generate_vector(vecmap, cnt, kpt, self.vec_pair, self.stride, self.theta)
         vecmap = vecmap * mask
 
-        img = Mytransforms.normalize(Mytransforms.to_tensor(img), [128.0, 128.0, 128.0], [256.0, 256.0, 256.0]) # mean, std
+        # img = Mytransforms.normalize(Mytransforms.to_tensor(img), [128.0, 128.0, 128.0], [256.0, 256.0, 256.0]) # mean, std
+        img = Mytransforms.to_tensor(img)
+        # print("3",img.min(), img.max(), img.shape)
         mask = Mytransforms.to_tensor(mask)
         heatmap = Mytransforms.to_tensor(heatmap)
         vecmap = Mytransforms.to_tensor(vecmap)
