@@ -9,6 +9,8 @@ sys.path.append('..')
 import torch
 import pose_estimation
 import cv2
+import pdb
+from tqdm import tqdm
 
 limbSeq = [[3,4], [4,5], [6,7], [7,8], [9,10], [10,11], [12,13], [13,14], [1,2], [2,9], [2,12], [2,3], [2,6], \
            [3,17],[6,18],[1,16],[1,15],[16,18],[15,17]]
@@ -21,12 +23,13 @@ colors = [[255, 0, 0], [255, 85, 0], [255, 170, 0], [255, 255, 0], [170, 255, 0]
           [170, 0, 255], [255, 0, 255], [255, 0, 170], [255, 0, 85]]
 
 boxsize = 368
-scale_search = [0.5, 1.0, 1.5, 2.0]
+scale_search = [1] #[0.5, 1.0, 1.5, 2.0]
 stride = 8
 padValue = 0.
-thre_point = 0.15
-thre_line = 0.05
+thre_point = 0.02#0.15
+thre_line = 0.0 #0.05
 stickwidth = 4
+
 
 def construct_model(args):
 
@@ -35,8 +38,9 @@ def construct_model(args):
     from collections import OrderedDict
     new_state_dict = OrderedDict()
     for k, v in state_dict.items():
-        name = k[7:]
-        new_state_dict[name] = v
+        if 'fc' not in k:
+            name = k[7:]
+            new_state_dict[name] = v
     state_dict = model.state_dict()
     state_dict.update(new_state_dict)
     model.load_state_dict(state_dict)
@@ -77,10 +81,87 @@ def normalize(origin_img):
 
     return origin_img
 
+def scatter_numpy(self, dim, index, src):
+    """
+    Writes all values from the Tensor src into self at the indices specified in the index Tensor.
+
+    :param dim: The axis along which to index
+    :param index: The indices of elements to scatter
+    :param src: The source element(s) to scatter
+    :return: self
+    """
+    if index.dtype != np.dtype('int_'):
+        raise TypeError("The values of index must be integers")
+    if self.ndim != index.ndim:
+        raise ValueError("Index should have the same number of dimensions as output")
+    if dim >= self.ndim or dim < -self.ndim:
+        raise IndexError("dim is out of range")
+    if dim < 0:
+        # Not sure why scatter should accept dim < 0, but that is the behavior in PyTorch's scatter
+        dim = self.ndim + dim
+    idx_xsection_shape = index.shape[:dim] + index.shape[dim + 1:]
+    self_xsection_shape = self.shape[:dim] + self.shape[dim + 1:]
+    if idx_xsection_shape != self_xsection_shape:
+        raise ValueError("Except for dimension " + str(dim) +
+                         ", all dimensions of index and output should be the same size")
+    # if (index >= self.shape[dim]).any() or (index < 0).any():
+    #     raise IndexError("The values of index must be between 0 and (self.shape[dim] -1)")
+
+    def make_slice(arr, dim, i):
+        slc = [slice(None)] * arr.ndim
+        slc[dim] = i
+        return slc
+
+    # We use index and dim parameters to create idx
+    # idx is in a form that can be used as a NumPy advanced index for scattering of src param. in self
+    idx = [[*np.indices(idx_xsection_shape).reshape(index.ndim - 1, -1),
+            index[make_slice(index, dim, i)].reshape(1, -1)[0]] for i in range(index.shape[dim])]
+    idx = list(np.concatenate(idx, axis=1))
+    idx.insert(dim, idx.pop())
+
+    if not np.isscalar(src):
+        if index.shape[dim] > src.shape[dim]:
+            raise IndexError("Dimension " + str(dim) + "of index can not be bigger than that of src ")
+        src_xsection_shape = src.shape[:dim] + src.shape[dim + 1:]
+        if idx_xsection_shape != src_xsection_shape:
+            raise ValueError("Except for dimension " +
+                             str(dim) + ", all dimensions of index and src should be the same size")
+        # src_idx is a NumPy advanced index for indexing of elements in the src
+        src_idx = list(idx)
+        src_idx.pop(dim)
+        src_idx.insert(dim, np.repeat(np.arange(index.shape[dim]), np.prod(idx_xsection_shape)))
+        self[idx] = src[src_idx]
+
+    else:
+        self[idx] = src
+
+    return self
+
+def label2onhot_numpy(b_parsing):
+    size = b_parsing.shape
+    b_parsing = b_parsing[:,:,0:1]
+    # pdb.set_trace()
+    oneHot_size = (size[0], size[1], 20)
+    b_parsing_label = np.zeros(oneHot_size)
+    b_parsing_label = scatter_numpy(b_parsing_label, 2, b_parsing.astype(int), 1.0)
+
+    return b_parsing_label
+
+def label2onhot(b_parsing_tensor):
+    size = b_parsing_tensor.size()
+    
+    oneHot_size = (size[0], 20, size[2], size[3])
+    b_parsing_label = torch.cuda.FloatTensor(torch.Size(oneHot_size)).zero_()
+    b_parsing_label = b_parsing_label.scatter_(1, b_parsing_tensor.data.long().cuda(), 1.0)
+
+    return b_parsing_label
+
 def process(model, input_path):
 
     origin_img = cv2.imread(input_path)
     normed_img = normalize(origin_img)
+    # normed_img = label2onhot_numpy(normed_img)
+    # normed_img = (normed_img - 0.5) / 0.5
 
     height, width, _ = normed_img.shape
 
@@ -97,14 +178,22 @@ def process(model, input_path):
         imgToTest_padded, pad = padRightDownCorner(imgToTest, stride, padValue)
 
         input_img = np.transpose(imgToTest_padded[:,:,:,np.newaxis], (3, 2, 0, 1)) # required shape (1, c, h, w)
-        mask = np.ones((1, 1, input_img.shape[2] / stride, input_img.shape[3] / stride), dtype=np.float32)
+        mask = np.ones((1, 1, input_img.shape[2] // stride, input_img.shape[3] // stride), dtype=np.float32)
 
-        input_var = torch.autograd.Variable(torch.from_numpy(input_img).cuda())
+        input_var = torch.autograd.Variable(torch.from_numpy(input_img)).cuda().float()
         mask_var = torch.autograd.Variable(torch.from_numpy(mask).cuda())
 
         # get the features
+        # pdb.set_trace()
+        input_var = label2onhot(input_var)
+        # 0, 1
+        # -1, 1
+        # # normalize
+        input_var = (input_var - 0.5) / 1
+        
         vec1, heat1, vec2, heat2, vec3, heat3, vec4, heat4, vec5, heat5, vec6, heat6 = model(input_var, mask_var)
-
+        # vec6, heat6 = model(input_var, mask_var)
+        
         # get the heatmap
         heatmap = heat6.data.cpu().numpy()
         heatmap = np.transpose(np.squeeze(heatmap), (1, 2, 0)) # (h, w, c)
@@ -264,14 +353,13 @@ def process(model, input_path):
                     row[-1] = 2
                     row[-2] = sum(candidate[connection_all[k][i, :2].astype(int), 2]) + connection_all[k][i][2]
                     subset = np.vstack([subset, row])
-
+    # pdb.set_trace()
     # delete som rows of subset which has few parts occur
     deleteIdx = []
     for i in range(len(subset)):
         if subset[i][-1] < 4 or subset[i][-2] / subset[i][-1] < 0.4:
             deleteIdx.append(i)
     subset = np.delete(subset, deleteIdx, axis=0)
-
     # draw points
     canvas = cv2.imread(input_path)
     for i in range(18):
@@ -299,15 +387,15 @@ def process(model, input_path):
 
 if __name__ == '__main__':
 
-    os.environ['CUDA_VISIBLE_DEVICES'] = '3'
+    os.environ['CUDA_VISIBLE_DEVICES'] = '0'
     parser = argparse.ArgumentParser()
-    parser.add_argument('--image', type=str, required=True, help='input image')
+    parser.add_argument('--images_path', type=str, default='/home/wenwens/Datasets/COCO/val2014_parsing', help='input image')
     parser.add_argument('--output', type=str, default='result.png', help='output image')
-    parser.add_argument('--model', type=str, default='openpose_coco_best.pth.tar', help='path to the weights file')
+    parser.add_argument('--model', type=str, default='../training/openpose_coco_30000.pth.tar', help='path to the weights file')
 
     args = parser.parse_args()
-    input_image = args.image
-    output = args.output
+    path = args.images_path
+    # output = args.output
 
 
     # load model
@@ -317,9 +405,11 @@ if __name__ == '__main__':
     print('start processing...')
 
     # generate image with body parts
-    canvas = process(model, input_image)
-
-    toc = time.time()
-    print ('processing time is %.5f' % (toc - tic))
-
-    cv2.imwrite(output, canvas)
+    images = os.listdir(path)
+    for input_image in tqdm(images):
+        if len(input_image) > 3 and 'vis' in input_image:
+            # pdb.set_trace()
+            img_path = os.path.join(path, input_image)
+            canvas = process(model, img_path)
+            output = img_path.replace("val2014_parsing", "val2014_test_result")
+            cv2.imwrite(output, canvas)

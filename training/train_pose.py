@@ -15,6 +15,7 @@ from utils import save_checkpoint as save_checkpoint
 from utils import Config as Config
 import pose_estimation
 import pdb
+import matplotlib.pyplot as plt
 
 def parse():
     # python train_pose.py --gpu 0 1 
@@ -46,10 +47,11 @@ def construct_model(args):
     # from collections import OrderedDict
     # new_state_dict = OrderedDict()
     # for k, v in state_dict.items():
-    #     name = k[7:]
-    #     new_state_dict[name] = v
+    #     if 'fc' not in k:
+    #         name = k[7:]
+    #         new_state_dict[name] = v
     # model.load_state_dict(new_state_dict)
-    model.fc = nn.Linear(2048, 80)
+    # # model.fc = nn.Linear(2048, 80)
     model = torch.nn.DataParallel(model, device_ids=args.gpu).cuda()
 
     return model
@@ -108,7 +110,7 @@ def train_val(model, args):
 
     if config.test_interval != 0 and args.val_dir is not None:
         val_loader = torch.utils.data.DataLoader(
-                CocoFolder.CocoFolder(valdir, 8,
+                CocoFolder.CocoFolder(valdir, 2,
                     Mytransforms.Compose([Mytransforms.TestResized(368),
                 ])),
                 batch_size=config.batch_size, shuffle=False,
@@ -139,10 +141,14 @@ def train_val(model, args):
     vec_weight = 46 * 46 * 38 / 2.0
     # pdb.set_trace()
     while iters < config.max_iter:
-        # pdb.set_trace()
         for i, (input, heatmap, vecmap, mask) in enumerate(train_loader):
-            # pdb.set_trace()
-            input = label2onhot(input)
+            
+            input = label2onhot(input)*256
+            # # normalize
+            # 0 256
+            # -0.5 0.5
+            input = (input - 128) / 256
+
             learning_rate = adjust_learning_rate(optimizer, iters, config.base_lr, policy=config.lr_policy, policy_parameter=config.policy_parameter, multiple=multiple)
             data_time.update(time.time() - end)
 
@@ -153,7 +159,8 @@ def train_val(model, args):
             heatmap_var = torch.autograd.Variable(heatmap)
             vecmap_var = torch.autograd.Variable(vecmap)
             mask_var = torch.autograd.Variable(mask)
-            
+
+            # vec1, heat1 = model(input_var, mask_var)
             vec1, heat1, vec2, heat2, vec3, heat3, vec4, heat4, vec5, heat5, vec6, heat6 = model(input_var, mask_var)
             loss1_1 = criterion(vec1, vecmap_var) * vec_weight
             loss1_2 = criterion(heat1, heatmap_var) * heat_weight
@@ -176,8 +183,9 @@ def train_val(model, args):
 
             optimizer.zero_grad()
             loss.backward()
+
             optimizer.step()
-    
+        
             batch_time.update(time.time() - end)
             end = time.time()
     
@@ -201,18 +209,29 @@ def train_val(model, args):
                 for cnt in range(12):
                     losses_list[cnt].reset()
 
+            if iters % 10000 == 0:
                 is_best = False
+
                 save_checkpoint({
                     'iter': iters,
                     'state_dict': model.state_dict(),
-                    }, is_best, 'openpose_coco')
+                    }, iters, 'openpose_coco')
 
-    
+            # if iters % 1 == 0:
+            #     print(heat1.cpu().data.numpy()[0,1])
+            #     plt.imshow(heatmap_var.cpu().data.numpy()[0,1])
+            #     plt.show()
+            #     plt.imshow(heat1.cpu().data.numpy()[0,1])
+            #     plt.show()
+                
             if config.test_interval != 0 and args.val_dir is not None and iters % config.test_interval == 0:
 
                 model.eval()
                 for j, (input, heatmap, vecmap, mask) in enumerate(val_loader):
-
+                    
+                    input = label2onhot(input)*256
+                    # # normalize
+                    input = (input - 128) / 256
                     heatmap = heatmap.cuda()
                     vecmap = vecmap.cuda()
                     mask = mask.cuda()
@@ -222,6 +241,7 @@ def train_val(model, args):
                     mask_var = torch.autograd.Variable(mask, volatile=True)
 
                     vec1, heat1, vec2, heat2, vec3, heat3, vec4, heat4, vec5, heat5, vec6, heat6 = model(input_var, mask_var)
+
                     loss1_1 = criterion(vec1, vecmap_var) * vec_weight
                     loss1_2 = criterion(heat1, heatmap_var) * heat_weight
                     loss2_1 = criterion(vec2, vecmap_var) * vec_weight

@@ -82,12 +82,14 @@ TODO: the stage is adjustable.
 
 - Download the data set, annotations and [COCO official toolbox](https://github.com/cocodataset/cocoapi)
 - Go to the "preprocessing" folder `cd preprocessing`.
-- Generate json file and masks `python generate_json_mask,py`.
+- Generate json file and masks `python generate_json_mask.py `.
+python generate_json_mask.py  --ann_path /home/wws/COCO/annotations/person_keypoints_train2014.json --json_path /home/wws/COCO/json/train2014.json -mask_dir /home/wws/COCO/mask --filelistpath /home/wws/COCO/filelist/train2014_parsing.txt --masklistpath /home/wws/COCO/masklist/train2014.txt --img_dir ~/COCO/train2014
 - Go to the "training" folder `cd ../training`.
 - Set the train parameters in "config.yml".
 - Set the train data dir , train mask dir, train json filepath and val data dir, val mask dir, val json filepath. 
 - Train the model `sh train.sh`.
 
+python train_pose.py --gpu 0 1 --train_dir /home/wws/COCO/filelist/train2014_parsing.txt /home/wws/COCO/masklist/train2014.txt /home/wws/COCO/json/train2014_parsing.json --val_dir /home/wws/COCO/filelist/train2014_parsing.txt /home/wws/COCO/masklist/train2014.txt /home/wws/COCO/json/train2014_parsing.json --config config.yml 
 
 ## Notice
 

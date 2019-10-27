@@ -57,7 +57,7 @@ class Pose_Estimation(nn.Module):
                 if batch_norm:
                     layers += [conv2d, nn.BatchNorm2d(v[1]), nn.ReLU(inplace=True)]
                 else:
-                    layers += [conv2d, nn.ReLU(inplace=True)]
+                    layers += [conv2d, nn.ReLU()]
 
         if last_activity:
             one_layer = net_dict[-1]
@@ -66,9 +66,9 @@ class Pose_Estimation(nn.Module):
 
             conv2d = nn.Conv2d(in_channels=v[0], out_channels=v[1], kernel_size=v[2], stride=v[3], padding=v[4])
             if batch_norm:
-                layers += [conv2d, nn.BatchNorm2d(v[1]), nn.ReLU(inplace=True)]
+                layers += [conv2d, nn.BatchNorm2d(v[1]), nn.ReLU()]
             else:
-                layers += [conv2d, nn.ReLU(inplace=True)]
+                layers += [conv2d, nn.ReLU()]
         else:
             one_layer = net_dict[-1]
             key = list(one_layer.keys())[0]

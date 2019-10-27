@@ -6,8 +6,8 @@ max_iter: 53100
 batch_size: 8
 test_interval: 3000
 topk: 3
-base_lr: 0.00008
-start_iters: 0
+base_lr: 0.00004
+start_iters: 3000
 best_model: 12345678.9
 #-------------lr_policy--------------------#
 # step
